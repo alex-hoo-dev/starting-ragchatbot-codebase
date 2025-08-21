@@ -122,10 +122,24 @@ function addMessage(content, type, sources = null, isWelcome = false) {
     let html = `<div class="message-content">${displayContent}</div>`;
     
     if (sources && sources.length > 0) {
+        // Handle sources that can be either strings (backward compatibility) or objects with links
+        const sourcesHtml = sources.map(source => {
+            if (typeof source === 'string') {
+                // Backward compatibility: plain text source
+                return source;
+            } else if (source.link) {
+                // New format: clickable link
+                return `<a href="${source.link}" target="_blank" rel="noopener noreferrer">${source.text}</a>`;
+            } else {
+                // New format but no link available
+                return source.text;
+            }
+        }).join(', ');
+        
         html += `
             <details class="sources-collapsible">
                 <summary class="sources-header">Sources</summary>
-                <div class="sources-content">${sources.join(', ')}</div>
+                <div class="sources-content">${sourcesHtml}</div>
             </details>
         `;
     }
