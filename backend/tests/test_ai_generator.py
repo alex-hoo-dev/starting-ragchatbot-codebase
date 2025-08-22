@@ -273,6 +273,230 @@ class TestAIGenerator:
         
         assert result == "I encountered an error searching for that information."
     
+    def test_generate_response_two_round_tool_calling(self):
+        """Test successful 2-round sequential tool calling"""
+        # Mock Round 1 response with tool use
+        round1_tool_content = [
+            MockContentBlock("text", text="I'll search for that course first."),
+            MockContentBlock(
+                "tool_use",
+                name="search_course_content",
+                input_data={"query": "Python course"},
+                block_id="tool_round1"
+            )
+        ]
+        round1_response = MockResponse(round1_tool_content, stop_reason="tool_use")
+        
+        # Mock Round 2 response with another tool use
+        round2_tool_content = [
+            MockContentBlock("text", text="Now let me search for advanced topics."),
+            MockContentBlock(
+                "tool_use",
+                name="search_course_content",
+                input_data={"query": "advanced Python topics"},
+                block_id="tool_round2"
+            )
+        ]
+        round2_response = MockResponse(round2_tool_content, stop_reason="tool_use")
+        
+        # Mock final response
+        final_response = MockResponse("Python courses cover basics and advanced topics like decorators and metaclasses.")
+        
+        # Set up mock client for 3 API calls (round1, round2, final)
+        self.mock_client.messages.create.side_effect = [
+            round1_response,
+            round2_response, 
+            final_response
+        ]
+        
+        # Mock tool manager
+        tool_manager = Mock()
+        tool_manager.execute_tool.side_effect = [
+            "Found Python basics course",
+            "Found advanced Python topics"
+        ]
+        
+        tools = [{"name": "search_course_content"}]
+        
+        result = self.ai_generator.generate_response(
+            query="What Python courses are available?",
+            tools=tools,
+            tool_manager=tool_manager
+        )
+        
+        # Verify two tool executions
+        assert tool_manager.execute_tool.call_count == 2
+        tool_manager.execute_tool.assert_any_call("search_course_content", query="Python course")
+        tool_manager.execute_tool.assert_any_call("search_course_content", query="advanced Python topics")
+        
+        # Verify 3 API calls were made
+        assert self.mock_client.messages.create.call_count == 3
+        
+        # Check final response
+        assert result == "Python courses cover basics and advanced topics like decorators and metaclasses."
+        
+        # Verify message history accumulation
+        final_call_args = self.mock_client.messages.create.call_args_list[2]
+        messages = final_call_args[1]["messages"]
+        # Should have: user query, round1 assistant, round1 tool results, round2 assistant, round2 tool results
+        assert len(messages) == 5
+    
+    def test_generate_response_early_termination_round1(self):
+        """Test early termination when Claude doesn't use tools in Round 1"""
+        # Mock response with no tool use
+        no_tool_response = MockResponse("Python is a programming language.")
+        self.mock_client.messages.create.return_value = no_tool_response
+        
+        tool_manager = Mock()
+        tools = [{"name": "search_course_content"}]
+        
+        result = self.ai_generator.generate_response(
+            query="What is Python?",
+            tools=tools,
+            tool_manager=tool_manager
+        )
+        
+        # Should not execute any tools
+        tool_manager.execute_tool.assert_not_called()
+        
+        # Should only make one API call
+        assert self.mock_client.messages.create.call_count == 1
+        
+        assert result == "Python is a programming language."
+    
+    def test_generate_response_early_termination_round2(self):
+        """Test early termination when Claude doesn't use tools in Round 2"""
+        # Mock Round 1 with tool use
+        round1_tool_content = [
+            MockContentBlock(
+                "tool_use",
+                name="search_course_content",
+                input_data={"query": "Python"},
+                block_id="tool_round1"
+            )
+        ]
+        round1_response = MockResponse(round1_tool_content, stop_reason="tool_use")
+        
+        # Mock Round 2 with no tool use (natural termination)
+        round2_response = MockResponse("Based on my search, Python is a versatile programming language.")
+        
+        self.mock_client.messages.create.side_effect = [round1_response, round2_response]
+        
+        tool_manager = Mock()
+        tool_manager.execute_tool.return_value = "Python programming info"
+        
+        result = self.ai_generator.generate_response(
+            query="Tell me about Python",
+            tools=[{"name": "search_course_content"}],
+            tool_manager=tool_manager
+        )
+        
+        # Should execute tool only once
+        tool_manager.execute_tool.assert_called_once()
+        
+        # Should make 2 API calls (round1, round2 without tools)
+        assert self.mock_client.messages.create.call_count == 2
+        
+        assert result == "Based on my search, Python is a versatile programming language."
+    
+    def test_generate_response_max_rounds_enforcement(self):
+        """Test that system enforces maximum 2 rounds"""
+        # Mock responses that would want to use tools indefinitely
+        tool_use_content = [
+            MockContentBlock(
+                "tool_use",
+                name="search_course_content",
+                input_data={"query": "search query"},
+                block_id="tool_id"
+            )
+        ]
+        
+        # Both rounds want to use tools
+        round1_response = MockResponse(tool_use_content, stop_reason="tool_use")
+        round2_response = MockResponse(tool_use_content, stop_reason="tool_use")
+        
+        # Final response after max rounds
+        final_response = MockResponse("Here's what I found from my searches.")
+        
+        self.mock_client.messages.create.side_effect = [
+            round1_response,
+            round2_response,
+            final_response
+        ]
+        
+        tool_manager = Mock()
+        tool_manager.execute_tool.return_value = "Search result"
+        
+        result = self.ai_generator.generate_response(
+            query="Complex query",
+            tools=[{"name": "search_course_content"}],
+            tool_manager=tool_manager
+        )
+        
+        # Should execute tools exactly 2 times (max rounds)
+        assert tool_manager.execute_tool.call_count == 2
+        
+        # Should make 3 API calls (round1, round2, final without tools)
+        assert self.mock_client.messages.create.call_count == 3
+        
+        assert result == "Here's what I found from my searches."
+    
+    def test_generate_response_round2_tool_failure(self):
+        """Test handling when Round 2 tool execution fails"""
+        # Mock Round 1 success
+        round1_tool_content = [
+            MockContentBlock(
+                "tool_use",
+                name="search_course_content",
+                input_data={"query": "Python"},
+                block_id="tool_round1"
+            )
+        ]
+        round1_response = MockResponse(round1_tool_content, stop_reason="tool_use")
+        
+        # Mock Round 2 with tool use  
+        round2_tool_content = [
+            MockContentBlock(
+                "tool_use",
+                name="search_course_content",
+                input_data={"query": "Java"},
+                block_id="tool_round2"
+            )
+        ]
+        round2_response = MockResponse(round2_tool_content, stop_reason="tool_use")
+        
+        # Final response after tool failure
+        final_response = MockResponse("I found information about Python but encountered an issue searching for Java.")
+        
+        self.mock_client.messages.create.side_effect = [
+            round1_response,
+            round2_response,
+            final_response
+        ]
+        
+        # Mock tool manager - success then failure
+        tool_manager = Mock()
+        tool_manager.execute_tool.side_effect = [
+            "Python information",
+            Exception("Database connection failed")
+        ]
+        
+        result = self.ai_generator.generate_response(
+            query="Compare Python and Java",
+            tools=[{"name": "search_course_content"}],
+            tool_manager=tool_manager
+        )
+        
+        # Should attempt both tool calls
+        assert tool_manager.execute_tool.call_count == 2
+        
+        # Should make 3 API calls despite Round 2 tool failure
+        assert self.mock_client.messages.create.call_count == 3
+        
+        # Should return response despite tool failure
+        assert isinstance(result, str)
+        assert len(result) > 0
+    
     def test_generate_response_no_tool_manager(self):
         """Test tool use when no tool manager is provided"""
         # Mock tool use response
@@ -294,10 +518,8 @@ class TestAIGenerator:
             tool_manager=None
         )
         
-        # Should return the initial response content as text
-        # Since no tool manager, _handle_tool_execution won't be called
-        # We need to check what happens - let's see if it has a text part
-        assert "I'll search for that information." in result or isinstance(result, str)
+        # Since no tool manager, should return fallback message
+        assert result == "I need access to search tools to answer this question, but they are currently unavailable."
     
     def test_system_prompt_structure(self):
         """Test that system prompt is properly structured"""
@@ -315,7 +537,7 @@ class TestAIGenerator:
         # Check system prompt contains expected elements
         assert "AI assistant specialized in course materials" in system_content
         assert "Search Tool Usage" in system_content
-        assert "One search per query maximum" in system_content
+        assert "Maximum 2 search operations per query" in system_content
         assert "Previous conversation:" in system_content
         assert "Previous context" in system_content
     
