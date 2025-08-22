@@ -15,6 +15,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Python 3.13+ required
 - Environment variables: Set `ANTHROPIC_API_KEY` in `.env` file
 
+### Code Quality Tools
+- `./scripts/format.sh` - Format code with black and sort imports with isort
+- `./scripts/lint.sh` - Run linting checks (flake8, black --check, isort --check)
+- `./scripts/typecheck.sh` - Run type checking with mypy
+- `./scripts/quality.sh` - Run full quality pipeline (format, lint, typecheck, tests)
+- `uv run black .` - Format code with black
+- `uv run isort .` - Sort imports with isort
+- `uv run flake8 backend/ main.py` - Run flake8 linting
+- `uv run mypy backend/ main.py` - Run type checking
+
 ## Architecture Overview
 
 This is a **RAG (Retrieval-Augmented Generation) system** for querying course materials. The architecture follows a full-stack pattern with clear separation of concerns:

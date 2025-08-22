@@ -1,10 +1,12 @@
 """
 Pytest configuration and fixtures for the RAG chatbot tests.
 """
-import pytest
-import sys
+
 import os
+import sys
 from unittest.mock import Mock, patch
+
+import pytest
 
 # Add parent directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,11 +32,7 @@ def mock_vector_store():
     """Fixture providing mock vector store"""
     mock_store = Mock()
     mock_store.search.return_value = Mock(
-        documents=[],
-        metadata=[],
-        distances=[],
-        error=None,
-        is_empty=lambda: True
+        documents=[], metadata=[], distances=[], error=None, is_empty=lambda: True
     )
     mock_store.get_lesson_link.return_value = None
     mock_store.get_existing_course_titles.return_value = []
@@ -57,40 +55,52 @@ def mock_anthropic_client():
 @pytest.fixture
 def sample_course_data():
     """Fixture providing sample course data for testing"""
-    from models import Course, Lesson, CourseChunk
-    
+    from models import Course, CourseChunk, Lesson
+
     course = Course(
         title="Python Programming Basics",
         course_link="https://example.com/python-course",
         instructor="Test Instructor",
         lessons=[
-            Lesson(lesson_number=1, title="Introduction to Python", lesson_link="https://example.com/lesson1"),
-            Lesson(lesson_number=2, title="Variables and Data Types", lesson_link="https://example.com/lesson2"),
-            Lesson(lesson_number=3, title="Control Structures", lesson_link="https://example.com/lesson3")
-        ]
+            Lesson(
+                lesson_number=1,
+                title="Introduction to Python",
+                lesson_link="https://example.com/lesson1",
+            ),
+            Lesson(
+                lesson_number=2,
+                title="Variables and Data Types",
+                lesson_link="https://example.com/lesson2",
+            ),
+            Lesson(
+                lesson_number=3,
+                title="Control Structures",
+                lesson_link="https://example.com/lesson3",
+            ),
+        ],
     )
-    
+
     chunks = [
         CourseChunk(
             content="Python is a high-level programming language.",
             course_title="Python Programming Basics",
             lesson_number=1,
-            chunk_index=0
+            chunk_index=0,
         ),
         CourseChunk(
             content="Variables in Python can store different types of data.",
-            course_title="Python Programming Basics", 
+            course_title="Python Programming Basics",
             lesson_number=2,
-            chunk_index=1
+            chunk_index=1,
         ),
         CourseChunk(
             content="Control structures like if statements control program flow.",
             course_title="Python Programming Basics",
             lesson_number=3,
-            chunk_index=2
-        )
+            chunk_index=2,
+        ),
     ]
-    
+
     return {"course": course, "chunks": chunks}
 
 
@@ -98,6 +108,7 @@ def sample_course_data():
 def suppress_warnings():
     """Auto-suppress warnings during tests"""
     import warnings
+
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     warnings.filterwarnings("ignore", category=UserWarning)
     warnings.filterwarnings("ignore", message=".*resource_tracker.*")
